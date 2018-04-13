@@ -7,7 +7,7 @@ class ApacheaprutilConan(ConanFile):
     license = "Apache-2.0"
     url = "https://github.com/malwoden/conan-apache-apr-util"
     settings = "os", "compiler", "build_type", "arch"
-    requires = "apache-apr/1.6.3@neewill/testing", "Expat/2.2.5@bincrafters/stable"
+    requires = "apache-apr/1.6.3@neewill/testing", "expat/2.2.5@bincrafters/stable"
     options = {"shared": [True, False]}
     default_options = "shared=False"
     exports_sources = ["CMakeLists.patch.txt"]
@@ -21,7 +21,7 @@ class ApacheaprutilConan(ConanFile):
         # cmake file requires patching to support anything other than these settings
         if self.settings.os == "Windows":
             self.options["apache-apr"].shared = self.options.shared
-            self.options["Expat"].shared = False
+            self.options["expat"].shared = False
 
     def source(self):
         file_ext = ".tar.gz" if not self.settings.os == "Windows" else "-win32-src.zip"
@@ -31,14 +31,18 @@ class ApacheaprutilConan(ConanFile):
         if self.settings.os == "Windows":
             tools.patch(self.source_subfolder, "CMakeLists.patch.txt")
 
-    def build_linux(self):
+    def build_unix(self):
         env_build = AutoToolsBuildEnvironment(self)
         env_build.fpic = self.options.shared
+
         with tools.environment_append(env_build.vars):
             configure_command = "./configure"
-            configure_command += " --prefix=" + os.getcwd()
+            configure_command += " --prefix=" + self.build_folder + "/buildinstall"
             configure_command += " --with-apr=" + self.deps_cpp_info["apache-apr"].rootpath
-            configure_command += " --with-expat=" + self.deps_cpp_info["Expat"].rootpath
+            configure_command += " --with-expat=" + self.deps_cpp_info["expat"].rootpath
+            # How to enable shared util builds
+            # configure_command += " --enable-shared=" + ("yes" if self.options.shared else "no")
+            # configure_command += " --enable-static=" + ("yes" if not self.options.shared else "no")
 
             # add with-ssl flag?
 
@@ -80,24 +84,28 @@ class ApacheaprutilConan(ConanFile):
         if self.settings.os == "Windows":
             self.build_windows()
         else:
-            self.build_linux()
+            self.build_unix()
 
     def package(self):
         base_path = self.build_folder + "/buildinstall/"
 
         if self.options.shared == True:
             self.copy("*.so*", dst="lib", src=base_path + "lib", keep_path=False)
+            self.copy("*.dylib*", dst="lib", src=base_path + "lib", keep_path=False)
             self.copy("libaprutil-1.lib", dst="lib", src=base_path + "lib", keep_path=False)
             self.copy("libaprutil-1.dll", dst="bin", src=base_path + "bin", keep_path=False)
         else:
             self.copy("aprutil-1.a", dst="lib", src=base_path + "lib", keep_path=False)
             self.copy("aprutil-1.lib", dst="lib", src=base_path + "lib", keep_path=False)
+            self.copy("libaprutil-1.a", dst="lib", src=base_path + "lib", keep_path=False)
 
         self.copy("apu-1-config", dst="bin", src=base_path + "bin", keep_path=False)
         self.copy("*.h", dst="include", src=base_path + "include", keep_path=True)
 
     def package_info(self):
         self.cpp_info.libs = tools.collect_libs(self)
+        if self.settings.os != "Windows":
+            self.cpp_info.includedirs = ["include/apr-1"]
 
         if self.settings.os == "Windows":
             if not self.options.shared:
