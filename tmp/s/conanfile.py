@@ -8,28 +8,31 @@ class ApacheaprutilConan(ConanFile):
     url = "https://github.com/malwoden/conan-apache-apr-util"
     settings = "os", "compiler", "build_type", "arch"
     requires = "apache-apr/1.6.3@neewill/testing", "Expat/2.2.5@bincrafters/stable"
-    options = {"shared": [True, False], "crypto": [True, False]}
-    default_options = "shared=False", "crypto=False"
+    options = {"shared": [True, False]}
+    default_options = "shared=False"
     exports_sources = ["CMakeLists.patch.txt"]
     source_subfolder = "source_subfolder"
     generators = "cmake"
 
     def requirements(self):
-        if self.options.crypto:
-            self.requires("OpenSSL/1.0.2n@conan/stable")
-
-        # cmake file requires patching to support anything other than these settings
-        if self.settings.os == "Windows":
-            self.options["apache-apr"].shared = self.options.shared
-            self.options["Expat"].shared = False
+        # make option?
+        self.requires("OpenSSL/1.0.2n@conan/stable")
 
     def source(self):
         file_ext = ".tar.gz" if not self.settings.os == "Windows" else "-win32-src.zip"
         tools.get("http://archive.apache.org/dist/apr/apr-util-" + self.version + file_ext)
         os.rename("apr-util-" + self.version, self.source_subfolder)
 
-        if self.settings.os == "Windows":
-            tools.patch(self.source_subfolder, "CMakeLists.patch.txt")
+        tools.patch(self.source_subfolder, "CMakeLists.patch.txt")
+
+        # # required to fix the FindXXX commands specified by Expat (and openssl?)
+        # tools.replace_in_file(self.source_subfolder + "/CMakeLists.txt", "PROJECT(APR-Util C)", '''PROJECT(APR-Util C)
+        #     include(${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
+        #     conan_basic_setup()''')
+
+        # # fix issue in cmakelists - it errors if using a static apr build
+        # if self.settings.os == "Windows" and not self.options["apache-apr"].shared:
+        #     tools.replace_in_file(self.source_subfolder + "/CMakeLists.txt", "libapr-1.lib", "apr-1.lib")
 
     def build_linux(self):
         env_build = AutoToolsBuildEnvironment(self)
@@ -40,8 +43,7 @@ class ApacheaprutilConan(ConanFile):
             configure_command += " --with-apr=" + self.deps_cpp_info["apache-apr"].rootpath
             configure_command += " --with-expat=" + self.deps_cpp_info["Expat"].rootpath
 
-            if self.options.crypto:
-                configure_command += " --with-ssl=" + self.deps_cpp_info["openssl"].rootpath
+            # add with-ssl flag?
 
             with tools.chdir(self.source_subfolder):
                 self.run(configure_command)
@@ -64,21 +66,14 @@ class ApacheaprutilConan(ConanFile):
         shutil.copyfile(self.deps_cpp_info["apache-apr"].lib_paths[0] + "/" + apr_lib_name,
             install_folder + "/lib/" + apr_lib_name)
 
-        if self.options.shared:
-            cmake.definitions["APU_BUILD_SHARED"] = "TRUE"
+        # APR util's CMakeLists.txt file has incorrect references to Expat's vars
+        # cmake_lists_file = self.source_folder + "/" + self.source_subfolder + "/CMakeLists.txt"
+        # tools.replace_in_file(cmake_lists_file, "EXPAT_INCLUDE_DIRS", "EXPAT_INCLUDE_DIR")
+        # tools.replace_in_file(cmake_lists_file, "EXPAT_LIBRARIES", "EXPAT_LIBRARY")
 
         cmake.definitions["CMAKE_INSTALL_PREFIX"] = install_folder
-
-        # Cmake file will require patching if these are enabled
-        cmake.definitions["APU_HAVE_ODBC"] = "FALSE"
-        cmake.definitions["APR_HAS_LDAP"] = "FALSE"
-
-        cmake.definitions["APU_HAVE_CRYPTO"] = "ON" if self.options.crypto else "OFF"
-
         cmake.configure(source_folder=self.source_subfolder)
         cmake.build(target=build_target)
-        if self.options.crypto:
-            cmake.build(target="apr_crypto_openssl-1")
         cmake.install()
 
     def build(self):
@@ -104,8 +99,8 @@ class ApacheaprutilConan(ConanFile):
     def package_info(self):
         self.cpp_info.libs = tools.collect_libs(self)
 
-        if self.settings.os == "Windows":
-            if not self.options.shared:
-                self.cpp_info.defines = ["APU_DECLARE_STATIC"]
-            else:
-                self.cpp_info.defines = ["APU_DECLARE_EXPORT"]
+        if self.settings.os == "Windows" and not self.options.shared:
+            self.cpp_info.defines = ["APU_DECLARE_STATIC"]
+        # necessary?
+        # self.cpp_info.includedirs = ["include/apr-1"]
+        # self.cpp_info.libs = ["aprutil-1"]
