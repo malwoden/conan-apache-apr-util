@@ -1,4 +1,5 @@
 from conans import ConanFile, AutoToolsBuildEnvironment, CMake, tools
+from conans.errors import ConanException
 import os, glob, shutil, ntpath
 
 class ApacheaprutilConan(ConanFile):
@@ -22,6 +23,9 @@ class ApacheaprutilConan(ConanFile):
         if self.settings.os == "Windows":
             self.options["apache-apr"].shared = self.options.shared
             self.options["expat"].shared = False
+
+        if self.settings.os != "Windows" and self.options.shared:
+            raise ConanException("Cannot build shared libs on non-windows platforms")
 
     def source(self):
         file_ext = ".tar.gz" if not self.settings.os == "Windows" else "-win32-src.zip"
